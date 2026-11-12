@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comment Bot Dashboard</title>
+<style>
+:root{--bg:#f6f6f8;--card:#fff;--tx:#1a1a1f;--mu:#6b6b76;--bd:#e2e2e8;--ac:#6d4aff}
+@media (prefers-color-scheme:dark){:root{--bg:#121216;--card:#1c1c22;--tx:#f0f0f4;--mu:#9a9aa6;--bd:#2c2c35;--ac:#8b6dff}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:640px;margin-inline:auto}
+h1{font-size:20px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mu);margin:10px 0 4px}
+input,select,textarea,button{width:100%;font:inherit;padding:10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+textarea{min-height:60px}
+button{background:var(--ac);color:#fff;border:0;font-weight:600;margin-top:10px}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.chk{display:flex;align-items:center;gap:8px;margin-top:8px}.chk input{width:auto}
+.stats{display:flex;gap:8px;text-align:center}.stats div{flex:1}.stats b{font-size:22px;display:block}
+.stats span{font-size:12px;color:var(--mu)}
+.hide{display:none}
+small{color:var(--mu)}
+</style>
+</head>
+<body>
+<h1>Comment Bot</h1>
+
+<div id="login" class="card">
+  <label>Admin password</label>
+  <input id="pw" type="password">
+  <button onclick="login()">Login</button>
+</div>
+
+<div id="app" class="hide">
+  <div class="card stats">
+    <div><b id="sHour">0</b><span>last hour</span></div>
+    <div><b id="sDay">0</b><span>last 24h</span></div>
+    <div><b id="sTotal">0</b><span>total</span></div>
+  </div>
+  <div id="rules"></div>
+  <button class="sec" onclick="addRule()">+ Add rule</button>
+  <button onclick="save()">Save all rules</button>
+  <p id="msg"><small></small></p>
+</div>
+
+<script>
+let PW = "", rules = [];
+const $ = (id) => document.getElementById(id);
+const api = (path, opt = {}) =>
+  fetch(path, { ...opt, headers: { "Content-Type": "application/json", "x-admin-password": PW } });
+
+async function login() {
+  PW = $("pw").value;
+  const r = await api("/api/rules");
+  if (!r.ok) return alert("Wrong password");
+  rules = await r.json();
+  $("login").classList.add("hide");
+  $("app").classList.remove("hide");
+  render();
+  stats();
+}
+
+async function stats() {
+  const s = await (await api("/api/stats")).json();
+  $("sHour").textContent = s.hour;
+  $("sDay").textContent = s.day;
+  $("sTotal").textContent = s.total;
+}
+
+function addRule() {
+  rules.push({
+    mediaId: "*", mode: "keyword", keywords: ["link"], publicReplies: ["Check your DM 📩"],
+    dmText: "", sendPublic: true, sendDm: true,
+    limits: { perHour: 30, perDay: 200, oncePerUser: true, delaySec: [5, 20] },
+  });
+  render();
+}
+
+function render() {
+  $("rules").innerHTML = rules.map((r, i) => `
+  <div class="card">
+    <b>Rule ${i + 1}</b>
+    <label>Reel ID (* = all reels)</label>
+    <input value="${r.mediaId}" onchange="rules[${i}].mediaId=this.value">
+    <label>Reply when</label>
+    <select onchange="rules[${i}].mode=this.value;render()">
+      <option value="keyword" ${r.mode === "keyword" ? "selected" : ""}>Comment has a keyword</option>
+      <option value="any" ${r.mode === "any" ? "selected" : ""}>Any comment</option>
+    </select>
+    ${r.mode === "keyword" ? `<label>Keywords (comma separated)</label>
+    <input value="${r.keywords.join(", ")}" onchange="rules[${i}].keywords=this.value.split(',').map(s=>s.trim()).filter(Boolean)">` : ""}
+    <div class="chk"><input type="checkbox" ${r.sendPublic ? "checked" : ""} onchange="rules[${i}].sendPublic=this.checked"> Public reply</div>
+    <label>Public replies (one per line, random pick)</label>
+    <textarea onchange="rules[${i}].publicReplies=this.value.split('\\n').filter(Boolean)">${r.publicReplies.join("\n")}</textarea>
+    <div class="chk"><input type="checkbox" ${r.sendDm ? "checked" : ""} onchange="rules[${i}].sendDm=this.checked"> Send DM</div>
+    <label>DM text</label>
+    <textarea onchange="rules[${i}].dmText=this.value">${r.dmText}</textarea>
+    <label>Limits</label>
+    <div class="row">
+      <input type="number" min="0" value="${r.limits.perHour}" onchange="rules[${i}].limits.perHour=+this.value" placeholder="per hour">
+      <input type="number" min="0" value="${r.limits.perDay}" onchange="rules[${i}].limits.perDay=+this.value" placeholder="per day">
+    </div>
+    <small>per hour / per day (0 = unlimited)</small>
+    <div class="row" style="margin-top:8px">
+      <input type="number" min="0" value="${r.limits.delaySec[0]}" onchange="rules[${i}].limits.delaySec[0]=+this.value">
+      <input type="number" min="0" value="${r.limits.delaySec[1]}" onchange="rules[${i}].limits.delaySec[1]=+this.value">
+    </div>
+    <small>delay seconds (min / max)</small>
+    <div class="chk"><input type="checkbox" ${r.limits.oncePerUser ? "checked" : ""} onchange="rules[${i}].limits.oncePerUser=this.checked"> One reply per person</div>
+    <button class="sec" onclick="rules.splice(${i},1);render()">Delete rule</button>
+  </div>`).join("");
+}
+
+async function save() {
+  const r = await api("/api/rules", { method: "PUT", body: JSON.stringify(rules) });
+  $("msg").innerHTML = "<small>" + (r.ok ? "Saved ✓" : "Save failed") + "</small>";
+}
+</script>
+</body>
+</html>
